@@ -297,7 +297,7 @@ export default function Bubbles() {
         }
         if (chosenLines.length === 0) chosenLines = [label];
 
-        ctx.fillStyle = "#ffffff";
+        ctx.fillStyle = "#000000ff";
         const lineHeight = chosenFont + 2;
         const startY = b.position.y - ((chosenLines.length - 1) * lineHeight) / 2;
         chosenLines.forEach((line, i) => {
