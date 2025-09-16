@@ -281,7 +281,8 @@ export default function Bubbles() {
         const maxWidth  = r * 1.55;
         const maxHeight = r * 1.15;
         const maxLines  = 3;
-        const startFont = Math.max(8, Math.floor(r * 0.35));
+        const votes = votesRef.current[key] || 0;
+        const startFont = Math.max(8, Math.floor(r * 0.40 + votes * 0.5));
         let chosenLines = [];
         let chosenFont = startFont;
 
