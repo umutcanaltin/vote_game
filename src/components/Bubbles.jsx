@@ -266,19 +266,18 @@ Events.on(render, "afterRender", () => {
     const genre = GENRES.find(g => g.key === key);
     const r = b.circleRadius || BASE_RADIUS;
 
-    // target max area: width ~85% of diameter, height ~70% of diameter
-    const maxWidth = r * 1.7;
-    const maxHeight = r * 1.4;
+    // target max area: width ~80% of diameter, height ~65% of diameter
+    const maxWidth = r * 1.6;
+    const maxHeight = r * 1.3;
     const maxLines = 3;
 
     let chosenLines = [];
-    let chosenFont = 22;
+    let chosenFont = Math.floor(r * 0.25); // cap ~25% of radius
 
     // try shrinking font until it fits both width & height
-    for (let font = 28; font >= 8; font--) {
+    for (let font = chosenFont; font >= 8; font--) {
       ctx.font = `bold ${font}px ${fontFamily}`;
 
-      // split words into lines
       const words = (genre?.label ?? key).split(/\s+/);
       const lines = [];
       let cur = "";
@@ -299,7 +298,7 @@ Events.on(render, "afterRender", () => {
       if (lines.length <= maxLines && blockHeight <= maxHeight) {
         chosenFont = font;
         chosenLines = lines;
-        break; // stop at the largest font that fits
+        break;
       }
     }
 
