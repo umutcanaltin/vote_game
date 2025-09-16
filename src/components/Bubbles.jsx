@@ -345,17 +345,7 @@ export default function Bubbles() {
         </button>
       </div>
 
-      {/* Footer logo */}
-      <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-none">
-        <div className="text-[10px] uppercase tracking-wide text-slate-200/85 mb-0 leading-none">
-          Powered by
-        </div>
-        <img
-          src="/poweredby.png"
-          alt="Powered by"
-          className="mt-0.5 w-[min(180px,36vw)] drop-shadow-md"
-        />
-      </div>
+     
     </div>
   );
 }
