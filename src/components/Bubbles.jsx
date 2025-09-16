@@ -1,7 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
 import Matter from "matter-js";
 
-const { Engine, Render, Runner, World, Bodies, Body, Events, Mouse, MouseConstraint, Query, Vector } = Matter;
+const {
+  Engine, Render, Runner, World, Bodies, Body, Events,
+  Mouse, MouseConstraint, Query, Vector
+} = Matter;
 
 // ---- Genres (your list) ----
 const GENRES = [
@@ -22,9 +25,9 @@ const GENRES = [
   { key: "turku", label: "Turku", color: "#a3e635" },
 ];
 
-const LS_KEY = "matter_bubbles_votes_v4";
+const LS_KEY = "matter_bubbles_votes_v5";
 
-// speeds (kept fairly zippy)
+// speeds (zippy)
 const INIT_SPEED_MIN = 7;
 const INIT_SPEED_MAX = 12;
 const KICK_BASE = 14;
@@ -42,7 +45,11 @@ function radiusForVotes(v = 0) {
 export default function Bubbles() {
   const containerRef = useRef(null);
 
-  // votes (persisted) – we won’t draw them on bubbles anymore
+  // physics refs so buttons/handlers can touch the world
+  const engineRef = useRef(null);
+  const bodyMapRef = useRef({}); // key -> Matter body
+
+  // votes (persisted). We don't draw counts on bubbles anymore.
   const [votes, setVotes] = useState(() => {
     try { return JSON.parse(localStorage.getItem(LS_KEY) || "{}") || {}; }
     catch { return {}; }
@@ -53,13 +60,19 @@ export default function Bubbles() {
     localStorage.setItem(LS_KEY, JSON.stringify(votes));
   }, [votes]);
 
-  // expose an Export button
+  // Export CSV and RESET votes (shrink bubbles immediately)
   function exportCSV() {
+    // CSV
     const rows = [
-      ["genre_label", "votes"],
-      ...GENRES.map(g => [ g.label, String(votesRef.current[g.key] || 0)]),
+      ["genre_key", "genre_label", "votes"],
+      ...GENRES.map(g => [g.key, g.label, String(votesRef.current[g.key] || 0)]),
     ];
-    const csv = rows.map(r => r.map(cell => /[",\n\r]/.test(cell) ? `"${String(cell).replace(/"/g, '""')}"` : cell).join(",")).join("\r\n") + "\r\n";
+    const csv = rows
+      .map(r => r
+        .map(cell => /[",\n\r]/.test(cell) ? `"${String(cell).replace(/"/g, '""')}"` : cell)
+        .join(","))
+      .join("\r\n") + "\r\n";
+
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -70,15 +83,45 @@ export default function Bubbles() {
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 0);
+
+    // RESET votes
+    const zeroed = Object.fromEntries(GENRES.map(g => [g.key, 0]));
+    votesRef.current = zeroed;
+    localStorage.setItem(LS_KEY, JSON.stringify(zeroed));
+    setVotes(zeroed);
+
+    // Shrink bubbles back to base size immediately
+    const engine = engineRef.current;
+    const map = bodyMapRef.current;
+    if (engine && map) {
+      for (const key of Object.keys(map)) {
+        const old = map[key];
+        if (!old) continue;
+        const newR = radiusForVotes(0);
+        const newBody = Bodies.circle(old.position.x, old.position.y, newR, {
+          restitution: 0.95,
+          friction: 0.0005,
+          frictionAir: 0.014,
+          render: { fillStyle: GENRES.find(g => g.key === key)?.color || "#888" },
+          label: key,
+        });
+        Body.setVelocity(newBody, old.velocity);
+        World.remove(engine.world, old);
+        World.add(engine.world, newBody);
+        map[key] = newBody;
+      }
+    }
   }
 
   useEffect(() => {
     const el = containerRef.current;
-    const width = el.clientWidth || 900;
+    const width = el.clientWidth || 960;
     const height = 560;
 
     // engine + renderer
     const engine = Engine.create({ gravity: { x: 0, y: 0 } });
+    engineRef.current = engine;
+
     const render = Render.create({
       element: el,
       engine,
@@ -104,7 +147,7 @@ export default function Bubbles() {
     ];
     World.add(engine.world, walls);
 
-    // spawn around a circle so we start clean
+    // spawn around a ring so the start layout is clean
     const cx = width / 2, cy = height / 2;
     const ringR = Math.min(width, height) * 0.33;
 
@@ -126,10 +169,12 @@ export default function Bubbles() {
       const a0 = Math.random() * Math.PI * 2;
       const sp = INIT_SPEED_MIN + Math.random() * (INIT_SPEED_MAX - INIT_SPEED_MIN);
       Body.setVelocity(b, { x: Math.cos(a0) * sp, y: Math.sin(a0) * sp });
+
       bodyMap[g.key] = b;
       return b;
     };
     World.add(engine.world, GENRES.map(makeBody));
+    bodyMapRef.current = bodyMap;
 
     // helpers
     const nearestOther = (b) => {
@@ -184,7 +229,7 @@ export default function Bubbles() {
       // 1) movement
       kickTowardNearest(b);
 
-      // 2) votes (persist, no on-bubble display)
+      // 2) votes (persist)
       const next = { ...votesRef.current, [key]: (votesRef.current[key] || 0) + 1 };
       votesRef.current = next;
       localStorage.setItem(LS_KEY, JSON.stringify(next));
@@ -203,6 +248,7 @@ export default function Bubbles() {
       World.remove(engine.world, b);
       World.add(engine.world, newBody);
       bodyMap[key] = newBody;
+      bodyMapRef.current = bodyMap;
     });
 
     // anti-stick nudge
@@ -218,14 +264,12 @@ export default function Bubbles() {
 
     // ---- Text fitting (multi-line, always inside) ----
     function wrapIntoLines(ctx, text, maxWidth) {
-      // Handles long single words by hard-breaking
+      // handles long single words by hard-breaking
       const pieces = text.split(/\s+/).flatMap(word => {
-        // break really long tokens
         let chunk = "";
         const out = [];
         for (const ch of word) {
           const test = chunk + ch;
-          ctx.font = ctx.font; // keep
           if (ctx.measureText(test).width > maxWidth && chunk.length > 0) {
             out.push(chunk);
             chunk = ch;
@@ -252,111 +296,95 @@ export default function Bubbles() {
       return lines;
     }
 
-// Draw only the genre titles, always inside the circle
-Events.on(render, "afterRender", () => {
-  const ctx = render.context;
-  ctx.save();
-  ctx.textAlign = "center";
-  ctx.shadowColor = "rgba(0,0,0,0.55)";
-  ctx.shadowBlur = 6;
-  const fontFamily = "Inter, system-ui, sans-serif";
+    // Draw only the genre titles, always inside the circle
+    Events.on(render, "afterRender", () => {
+      const ctx = render.context;
+      ctx.save();
+      ctx.textAlign = "center";
+      ctx.shadowColor = "rgba(0,0,0,0.55)";
+      ctx.shadowBlur = 6;
+      const fontFamily = "Inter, system-ui, sans-serif";
 
-  for (const key of Object.keys(bodyMap)) {
-    const b = bodyMap[key];
-    const genre = GENRES.find(g => g.key === key);
-    const r = b.circleRadius || BASE_RADIUS;
+      for (const key of Object.keys(bodyMap)) {
+        const b = bodyMap[key];
+        const genre = GENRES.find(g => g.key === key);
+        const r = b.circleRadius || BASE_RADIUS;
 
-    // target max area: width ~80% of diameter, height ~65% of diameter
-    const maxWidth = r * 1.6;
-    const maxHeight = r * 1.3;
-    const maxLines = 3;
+        // keep text comfortably smaller than bubble
+        const maxWidth  = r * 1.6; // ~80% diameter
+        const maxHeight = r * 1.3; // ~65% diameter
+        const maxLines  = 3;
 
-    let chosenLines = [];
-    let chosenFont = Math.floor(r * 0.25); // cap ~25% of radius
+        let chosenLines = [];
+        let chosenFont = Math.floor(r * 0.25); // cap ~25% of radius
 
-    // try shrinking font until it fits both width & height
-    for (let font = chosenFont; font >= 8; font--) {
-      ctx.font = `bold ${font}px ${fontFamily}`;
+        // try shrinking font until it fits both width & height
+        for (let font = chosenFont; font >= 8; font--) {
+          ctx.font = `bold ${font}px ${fontFamily}`;
 
-      const words = (genre?.label ?? key).split(/\s+/);
-      const lines = [];
-      let cur = "";
-      for (const w of words) {
-        const test = cur ? cur + " " + w : w;
-        if (ctx.measureText(test).width <= maxWidth) {
-          cur = test;
-        } else {
-          if (cur) lines.push(cur);
-          cur = w;
+          const lines = wrapIntoLines(ctx, genre?.label ?? key, maxWidth);
+          const lineHeight = font + 2;
+          const blockHeight = lines.length * lineHeight;
+
+          if (lines.length <= maxLines && blockHeight <= maxHeight) {
+            chosenFont = font;
+            chosenLines = lines;
+            break;
+          }
         }
+
+        // draw lines vertically centered
+        ctx.fillStyle = "#0b1220";
+        const lineHeight = chosenFont + 2;
+        const startY = b.position.y - ((chosenLines.length - 1) * lineHeight) / 2;
+        chosenLines.forEach((line, i) => {
+          ctx.font = `bold ${chosenFont}px ${fontFamily}`;
+          ctx.fillText(line, b.position.x, startY + i * lineHeight);
+        });
       }
-      if (cur) lines.push(cur);
 
-      const lineHeight = font + 2;
-      const blockHeight = lines.length * lineHeight;
-
-      if (lines.length <= maxLines && blockHeight <= maxHeight) {
-        chosenFont = font;
-        chosenLines = lines;
-        break;
-      }
-    }
-
-    // draw lines vertically centered
-    ctx.fillStyle = "#0b1220";
-    const lineHeight = chosenFont + 2;
-    const startY = b.position.y - ((chosenLines.length - 1) * lineHeight) / 2;
-    chosenLines.forEach((line, i) => {
-      ctx.font = `bold ${chosenFont}px ${fontFamily}`;
-      ctx.fillText(line, b.position.x, startY + i * lineHeight);
+      ctx.restore();
     });
-  }
-
-  ctx.restore();
-});
-
 
     // cleanup
     return () => {
       Render.stop(render);
       Runner.stop(runner);
       World.clear(engine.world, false);
-      Matter.Engine.clear(engine);
+      Engine.clear(engine);
       render.canvas.remove();
       render.textures = {};
     };
   }, []);
 
   return (
-    <div className="w-full">
+    <div className="w-full relative">
       <div
         ref={containerRef}
         style={{ width: "100%", height: 560, borderRadius: 16, overflow: "hidden" }}
         className="border border-white/10"
       />
+
       <div className="flex justify-end gap-2 mt-2">
         <button
           onClick={exportCSV}
           className="px-3 py-1.5 rounded-md border border-white/20 text-sm text-slate-100 hover:bg-white/10"
         >
-          Export CSV
+          Export CSV & Reset
         </button>
       </div>
 
-
+      {/* bottom-center "Powered by" (text first, then PNG) */}
       <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-none">
-  <div className="text-xs uppercase tracking-wide text-slate-200/85 mb-1">
-    Powered by
-  </div>
-  <img
-    src="/poweredby.png"
-    alt="Powered by ..."
-    className="w-[min(200px,40vw)] drop-shadow-lg"
-  />
-</div>
+        <div className="text-xs uppercase tracking-wide text-slate-200/85 mb-1">
+          Powered by
+        </div>
+        <img
+          src="/poweredby.png"  // place your PNG in /public/poweredby.png
+          alt="Powered by"
+          className="w-[min(200px,40vw)] drop-shadow-lg"
+        />
+      </div>
     </div>
-
-    
-    
   );
 }
