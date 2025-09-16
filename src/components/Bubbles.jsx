@@ -6,7 +6,7 @@ const {
   Mouse, MouseConstraint, Query, Vector
 } = Matter;
 
-// ---- Genres (your list) ----
+// ---- Genres ----
 const GENRES = [
   { key: "house", label: "House", color: "#ffb347" },
   { key: "trance", label: "Trance", color: "#3ddcff" },
@@ -25,18 +25,18 @@ const GENRES = [
   { key: "turku", label: "Turku", color: "#a3e635" },
 ];
 
-const LS_KEY = "matter_bubbles_votes_v5";
+const LS_KEY = "matter_bubbles_votes_final";
 
-// speeds (zippy)
+// speeds
 const INIT_SPEED_MIN = 7;
 const INIT_SPEED_MAX = 12;
 const KICK_BASE = 14;
 const KICK_VARIANCE = 9;
 
-// growth curve (bigger per click)
+// growth curve
 const BASE_RADIUS = 30;
-const SQRT_COEFF  = 12;   // sqrt growth
-const EARLY_BOOST = 1.25; // extra linear kick for first ~12 votes
+const SQRT_COEFF  = 12;
+const EARLY_BOOST = 1.25;
 function radiusForVotes(v = 0) {
   const n = Math.max(0, v);
   return BASE_RADIUS + SQRT_COEFF * Math.sqrt(n) + EARLY_BOOST * Math.min(n, 12);
@@ -44,12 +44,9 @@ function radiusForVotes(v = 0) {
 
 export default function Bubbles() {
   const containerRef = useRef(null);
-
-  // physics refs so buttons/handlers can touch the world
   const engineRef = useRef(null);
-  const bodyMapRef = useRef({}); // key -> Matter body
+  const bodyMapRef = useRef({});
 
-  // votes (persisted). We don't draw counts on bubbles anymore.
   const [votes, setVotes] = useState(() => {
     try { return JSON.parse(localStorage.getItem(LS_KEY) || "{}") || {}; }
     catch { return {}; }
@@ -60,17 +57,14 @@ export default function Bubbles() {
     localStorage.setItem(LS_KEY, JSON.stringify(votes));
   }, [votes]);
 
-  // Export CSV and RESET votes (shrink bubbles immediately)
+  // --- Export CSV + reset votes
   function exportCSV() {
-    // CSV
     const rows = [
       ["genre_key", "genre_label", "votes"],
       ...GENRES.map(g => [g.key, g.label, String(votesRef.current[g.key] || 0)]),
     ];
     const csv = rows
-      .map(r => r
-        .map(cell => /[",\n\r]/.test(cell) ? `"${String(cell).replace(/"/g, '""')}"` : cell)
-        .join(","))
+      .map(r => r.map(cell => /[",\n\r]/.test(cell) ? `"${String(cell).replace(/"/g, '""')}"` : cell).join(","))
       .join("\r\n") + "\r\n";
 
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
@@ -84,13 +78,13 @@ export default function Bubbles() {
     a.click();
     setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 0);
 
-    // RESET votes
+    // reset votes
     const zeroed = Object.fromEntries(GENRES.map(g => [g.key, 0]));
     votesRef.current = zeroed;
     localStorage.setItem(LS_KEY, JSON.stringify(zeroed));
     setVotes(zeroed);
 
-    // Shrink bubbles back to base size immediately
+    // shrink bubbles
     const engine = engineRef.current;
     const map = bodyMapRef.current;
     if (engine && map) {
@@ -118,7 +112,6 @@ export default function Bubbles() {
     const width = el.clientWidth || 960;
     const height = 560;
 
-    // engine + renderer
     const engine = Engine.create({ gravity: { x: 0, y: 0 } });
     engineRef.current = engine;
 
@@ -128,7 +121,7 @@ export default function Bubbles() {
       options: {
         width,
         height,
-        background: "#0b1220",
+        background: "transparent", // we use CSS background
         wireframes: false,
         pixelRatio: window.devicePixelRatio || 1,
       },
@@ -147,12 +140,11 @@ export default function Bubbles() {
     ];
     World.add(engine.world, walls);
 
-    // spawn around a ring so the start layout is clean
+    // spawn around ring
     const cx = width / 2, cy = height / 2;
     const ringR = Math.min(width, height) * 0.33;
-
     const bodyMap = {};
-    const makeBody = (g, i) => {
+    GENRES.forEach((g, i) => {
       const count = votesRef.current[g.key] || 0;
       const radius = radiusForVotes(count);
       const ang = (i / GENRES.length) * Math.PI * 2;
@@ -165,18 +157,15 @@ export default function Bubbles() {
         render: { fillStyle: g.color },
         label: g.key,
       });
-      // random initial velocity
       const a0 = Math.random() * Math.PI * 2;
       const sp = INIT_SPEED_MIN + Math.random() * (INIT_SPEED_MAX - INIT_SPEED_MIN);
       Body.setVelocity(b, { x: Math.cos(a0) * sp, y: Math.sin(a0) * sp });
-
       bodyMap[g.key] = b;
-      return b;
-    };
-    World.add(engine.world, GENRES.map(makeBody));
+      World.add(engine.world, b);
+    });
     bodyMapRef.current = bodyMap;
 
-    // helpers
+    // nearest & kick
     const nearestOther = (b) => {
       let best = null, bestD2 = Infinity;
       for (const o of Object.values(bodyMap)) {
@@ -188,16 +177,12 @@ export default function Bubbles() {
       }
       return best;
     };
-
     const kickTowardNearest = (b) => {
       const target = nearestOther(b);
       let dir;
       if (target) {
         const v = { x: target.position.x - b.position.x, y: target.position.y - b.position.y };
         dir = Vector.normalise(v);
-        const jitter = (Math.random() - 0.5) * (Math.PI / 5); // ±36°
-        const c = Math.cos(jitter), s = Math.sin(jitter);
-        dir = { x: dir.x * c - dir.y * s, y: dir.x * s + dir.y * c };
       } else {
         const a = Math.random() * Math.PI * 2;
         dir = { x: Math.cos(a), y: Math.sin(a) };
@@ -211,7 +196,7 @@ export default function Bubbles() {
       });
     };
 
-    // mouse handling
+    // mouse
     const mouse = Mouse.create(render.canvas);
     const mouseConstraint = MouseConstraint.create(engine, {
       mouse,
@@ -225,17 +210,11 @@ export default function Bubbles() {
       if (!hits.length) return;
       const b = hits[0];
       const key = b.label;
-
-      // 1) movement
       kickTowardNearest(b);
-
-      // 2) votes (persist)
       const next = { ...votesRef.current, [key]: (votesRef.current[key] || 0) + 1 };
       votesRef.current = next;
       localStorage.setItem(LS_KEY, JSON.stringify(next));
       setVotes(next);
-
-      // 3) resize: replace body with larger one, carry velocity
       const newRadius = radiusForVotes(next[key]);
       const newBody = Bodies.circle(b.position.x, b.position.y, newRadius, {
         restitution: 0.95,
@@ -248,10 +227,9 @@ export default function Bubbles() {
       World.remove(engine.world, b);
       World.add(engine.world, newBody);
       bodyMap[key] = newBody;
-      bodyMapRef.current = bodyMap;
     });
 
-    // anti-stick nudge
+    // anti-stick
     Events.on(engine, "afterUpdate", () => {
       for (const b of Object.values(bodyMap)) {
         const v2 = b.velocity.x*b.velocity.x + b.velocity.y*b.velocity.y;
@@ -262,129 +240,74 @@ export default function Bubbles() {
       }
     });
 
-    // ---- Text fitting (multi-line, always inside) ----
-    function wrapIntoLines(ctx, text, maxWidth) {
-      // handles long single words by hard-breaking
-      const pieces = text.split(/\s+/).flatMap(word => {
-        let chunk = "";
-        const out = [];
-        for (const ch of word) {
-          const test = chunk + ch;
-          if (ctx.measureText(test).width > maxWidth && chunk.length > 0) {
-            out.push(chunk);
-            chunk = ch;
-          } else {
-            chunk = test;
+    // labels
+    Events.on(render, "afterRender", () => {
+      const ctx = render.context;
+      ctx.save();
+      ctx.textAlign = "center";
+      ctx.shadowColor = "rgba(0,0,0,0.55)";
+      ctx.shadowBlur = 6;
+      const fontFamily = "Inter, system-ui, sans-serif";
+
+      function wrapIntoLines(text, maxWidth, fontPx) {
+        ctx.font = `bold ${fontPx}px ${fontFamily}`;
+        const pieces = text.split(/\s+/).flatMap(word => {
+          let chunk = "", out = [];
+          for (const ch of word) {
+            const test = chunk + ch;
+            if (ctx.measureText(test).width > maxWidth && chunk.length > 0) {
+              out.push(chunk); chunk = ch;
+            } else { chunk = test; }
+          }
+          if (chunk) out.push(chunk);
+          return out;
+        });
+        const lines = [];
+        let cur = "";
+        for (const w of pieces) {
+          const test = cur ? cur + " " + w : w;
+          if (ctx.measureText(test).width <= maxWidth) cur = test;
+          else { if (cur) lines.push(cur); cur = w; }
+        }
+        if (cur) lines.push(cur);
+        return lines;
+      }
+
+      for (const key of Object.keys(bodyMap)) {
+        const b = bodyMap[key];
+        const genre = GENRES.find(g => g.key === key);
+        const label = (genre?.label ?? key).trim();
+        const r = b.circleRadius || 30;
+        const maxWidth  = r * 1.55;
+        const maxHeight = r * 1.15;
+        const maxLines  = 3;
+        const startFont = Math.max(8, Math.floor(r * 0.22));
+        let chosenLines = [];
+        let chosenFont = startFont;
+
+        for (let font = startFont; font >= 8; font--) {
+          const lines = wrapIntoLines(label, maxWidth, font);
+          const lineHeight = font + 2;
+          const blockHeight = lines.length * lineHeight;
+          if (lines.length <= maxLines && blockHeight <= maxHeight) {
+            chosenFont = font;
+            chosenLines = lines;
+            break;
           }
         }
-        if (chunk) out.push(chunk);
-        return out;
-      });
+        if (chosenLines.length === 0) chosenLines = [label];
 
-      const lines = [];
-      let cur = "";
-      for (const w of pieces) {
-        const test = cur ? cur + " " + w : w;
-        if (ctx.measureText(test).width <= maxWidth) {
-          cur = test;
-        } else {
-          if (cur) lines.push(cur);
-          cur = w;
-        }
+        ctx.fillStyle = "#ffffff";
+        const lineHeight = chosenFont + 2;
+        const startY = b.position.y - ((chosenLines.length - 1) * lineHeight) / 2;
+        chosenLines.forEach((line, i) => {
+          ctx.font = `bold ${chosenFont}px ${fontFamily}`;
+          ctx.fillText(line, b.position.x, startY + i * lineHeight);
+        });
       }
-      if (cur) lines.push(cur);
-      return lines;
-    }
-
-    // Draw genre titles, always inside the circle (robust fallback)
-Events.on(render, "afterRender", () => {
-  const ctx = render.context;
-  ctx.save();
-  ctx.textAlign = "center";
-  ctx.shadowColor = "rgba(0,0,0,0.55)";
-  ctx.shadowBlur = 6;
-  const fontFamily = "Inter, system-ui, sans-serif";
-
-  // helper: wrap into lines that fit width (hard-breaks long words)
-  function wrapIntoLines(text, maxWidth, fontPx) {
-    ctx.font = `bold ${fontPx}px ${fontFamily}`;
-    const pieces = text.split(/\s+/).flatMap(word => {
-      let chunk = "", out = [];
-      for (const ch of word) {
-        const test = chunk + ch;
-        if (ctx.measureText(test).width > maxWidth && chunk.length > 0) {
-          out.push(chunk); chunk = ch;
-        } else { chunk = test; }
-      }
-      if (chunk) out.push(chunk);
-      return out;
+      ctx.restore();
     });
 
-    const lines = [];
-    let cur = "";
-    for (const w of pieces) {
-      const test = cur ? cur + " " + w : w;
-      if (ctx.measureText(test).width <= maxWidth) cur = test;
-      else { if (cur) lines.push(cur); cur = w; }
-    }
-    if (cur) lines.push(cur);
-    return lines;
-  }
-
-  for (const key of Object.keys(bodyMapRef.current)) {
-    const b = bodyMapRef.current[key];
-    const genre = GENRES.find(g => g.key === key);
-    const label = (genre?.label ?? key).trim();
-    const r = b.circleRadius || 30;
-
-    // keep text comfortably smaller than bubble
-    const maxWidth  = r * 1.55; // ~78% diameter
-    const maxHeight = r * 1.15; // ~58% diameter
-    const maxLines  = 3;
-
-    // start from a conservative cap so it's never too big
-    const startFont = Math.max(8, Math.floor(r * 0.22)); // ~22% of radius
-    let chosenLines = [];
-    let chosenFont = startFont;
-
-    for (let font = startFont; font >= 8; font--) {
-      const lines = wrapIntoLines(label, maxWidth, font);
-      const lineHeight = font + 2;
-      const blockHeight = lines.length * lineHeight;
-      if (lines.length <= maxLines && blockHeight <= maxHeight) {
-        chosenFont = font;
-        chosenLines = lines;
-        break;
-      }
-    }
-
-    // last-resort fallback: ensure we draw something (truncate with …)
-    if (chosenLines.length === 0) {
-      const font = 8;
-      ctx.font = `bold ${font}px ${fontFamily}`;
-      let s = label;
-      while (s.length > 1 && ctx.measureText(s + "…").width > maxWidth) {
-        s = s.slice(0, -1);
-      }
-      chosenFont = font;
-      chosenLines = [s + (s !== label ? "…" : "")];
-    }
-
-    // draw lines vertically centered in WHITE for contrast
-    ctx.fillStyle = "#ffffff";
-    const lineHeight = chosenFont + 2;
-    const startY = b.position.y - ((chosenLines.length - 1) * lineHeight) / 2;
-    chosenLines.forEach((line, i) => {
-      ctx.font = `bold ${chosenFont}px ${fontFamily}`;
-      ctx.fillText(line, b.position.x, startY + i * lineHeight);
-    });
-  }
-
-  ctx.restore();
-});
-
-
-    // cleanup
     return () => {
       Render.stop(render);
       Runner.stop(runner);
@@ -397,9 +320,19 @@ Events.on(render, "afterRender", () => {
 
   return (
     <div className="w-full relative">
+      {/* Playground with PNG background */}
       <div
         ref={containerRef}
-        style={{ width: "100%", height: 560, borderRadius: 16, overflow: "hidden" }}
+        style={{
+          width: "100%",
+          height: 560,
+          borderRadius: 16,
+          overflow: "hidden",
+          backgroundImage: "url('/poweredby.png')",
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          backgroundRepeat: "no-repeat",
+        }}
         className="border border-white/10"
       />
 
@@ -412,16 +345,17 @@ Events.on(render, "afterRender", () => {
         </button>
       </div>
 
-  <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-none">
-  <div className="text-[10px] uppercase tracking-wide text-slate-200/85 mb-0 leading-none">
-    Powered by
-  </div>
-  <img
-    src="/poweredby.png"
-    alt="Powered by"
-    className="mt-0.5 w-[min(180px,36vw)] drop-shadow-md"
-  />
-</div>
+      {/* Footer logo */}
+      <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-none">
+        <div className="text-[10px] uppercase tracking-wide text-slate-200/85 mb-0 leading-none">
+          Powered by
+        </div>
+        <img
+          src="/poweredby.png"
+          alt="Powered by"
+          className="mt-0.5 w-[min(180px,36vw)] drop-shadow-md"
+        />
+      </div>
     </div>
   );
 }
