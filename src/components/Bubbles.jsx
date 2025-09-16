@@ -296,55 +296,93 @@ export default function Bubbles() {
       return lines;
     }
 
-    // Draw only the genre titles, always inside the circle
-    Events.on(render, "afterRender", () => {
-      const ctx = render.context;
-      ctx.save();
-      ctx.textAlign = "center";
-      ctx.shadowColor = "rgba(0,0,0,0.55)";
-      ctx.shadowBlur = 6;
-      const fontFamily = "Inter, system-ui, sans-serif";
+    // Draw genre titles, always inside the circle (robust fallback)
+Events.on(render, "afterRender", () => {
+  const ctx = render.context;
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.shadowColor = "rgba(0,0,0,0.55)";
+  ctx.shadowBlur = 6;
+  const fontFamily = "Inter, system-ui, sans-serif";
 
-      for (const key of Object.keys(bodyMap)) {
-        const b = bodyMap[key];
-        const genre = GENRES.find(g => g.key === key);
-        const r = b.circleRadius || BASE_RADIUS;
-
-        // keep text comfortably smaller than bubble
-        const maxWidth  = r * 1.6; // ~80% diameter
-        const maxHeight = r * 1.3; // ~65% diameter
-        const maxLines  = 3;
-
-        let chosenLines = [];
-        let chosenFont = Math.floor(r * 0.25); // cap ~25% of radius
-
-        // try shrinking font until it fits both width & height
-        for (let font = chosenFont; font >= 8; font--) {
-          ctx.font = `bold ${font}px ${fontFamily}`;
-
-          const lines = wrapIntoLines(ctx, genre?.label ?? key, maxWidth);
-          const lineHeight = font + 2;
-          const blockHeight = lines.length * lineHeight;
-
-          if (lines.length <= maxLines && blockHeight <= maxHeight) {
-            chosenFont = font;
-            chosenLines = lines;
-            break;
-          }
-        }
-
-        // draw lines vertically centered
-        ctx.fillStyle = "#0b1220";
-        const lineHeight = chosenFont + 2;
-        const startY = b.position.y - ((chosenLines.length - 1) * lineHeight) / 2;
-        chosenLines.forEach((line, i) => {
-          ctx.font = `bold ${chosenFont}px ${fontFamily}`;
-          ctx.fillText(line, b.position.x, startY + i * lineHeight);
-        });
+  // helper: wrap into lines that fit width (hard-breaks long words)
+  function wrapIntoLines(text, maxWidth, fontPx) {
+    ctx.font = `bold ${fontPx}px ${fontFamily}`;
+    const pieces = text.split(/\s+/).flatMap(word => {
+      let chunk = "", out = [];
+      for (const ch of word) {
+        const test = chunk + ch;
+        if (ctx.measureText(test).width > maxWidth && chunk.length > 0) {
+          out.push(chunk); chunk = ch;
+        } else { chunk = test; }
       }
-
-      ctx.restore();
+      if (chunk) out.push(chunk);
+      return out;
     });
+
+    const lines = [];
+    let cur = "";
+    for (const w of pieces) {
+      const test = cur ? cur + " " + w : w;
+      if (ctx.measureText(test).width <= maxWidth) cur = test;
+      else { if (cur) lines.push(cur); cur = w; }
+    }
+    if (cur) lines.push(cur);
+    return lines;
+  }
+
+  for (const key of Object.keys(bodyMapRef.current)) {
+    const b = bodyMapRef.current[key];
+    const genre = GENRES.find(g => g.key === key);
+    const label = (genre?.label ?? key).trim();
+    const r = b.circleRadius || 30;
+
+    // keep text comfortably smaller than bubble
+    const maxWidth  = r * 1.55; // ~78% diameter
+    const maxHeight = r * 1.15; // ~58% diameter
+    const maxLines  = 3;
+
+    // start from a conservative cap so it's never too big
+    const startFont = Math.max(8, Math.floor(r * 0.22)); // ~22% of radius
+    let chosenLines = [];
+    let chosenFont = startFont;
+
+    for (let font = startFont; font >= 8; font--) {
+      const lines = wrapIntoLines(label, maxWidth, font);
+      const lineHeight = font + 2;
+      const blockHeight = lines.length * lineHeight;
+      if (lines.length <= maxLines && blockHeight <= maxHeight) {
+        chosenFont = font;
+        chosenLines = lines;
+        break;
+      }
+    }
+
+    // last-resort fallback: ensure we draw something (truncate with …)
+    if (chosenLines.length === 0) {
+      const font = 8;
+      ctx.font = `bold ${font}px ${fontFamily}`;
+      let s = label;
+      while (s.length > 1 && ctx.measureText(s + "…").width > maxWidth) {
+        s = s.slice(0, -1);
+      }
+      chosenFont = font;
+      chosenLines = [s + (s !== label ? "…" : "")];
+    }
+
+    // draw lines vertically centered in WHITE for contrast
+    ctx.fillStyle = "#ffffff";
+    const lineHeight = chosenFont + 2;
+    const startY = b.position.y - ((chosenLines.length - 1) * lineHeight) / 2;
+    chosenLines.forEach((line, i) => {
+      ctx.font = `bold ${chosenFont}px ${fontFamily}`;
+      ctx.fillText(line, b.position.x, startY + i * lineHeight);
+    });
+  }
+
+  ctx.restore();
+});
+
 
     // cleanup
     return () => {
@@ -374,17 +412,16 @@ export default function Bubbles() {
         </button>
       </div>
 
-      {/* bottom-center "Powered by" (text first, then PNG) */}
-      <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-none">
-        <div className="text-xs uppercase tracking-wide text-slate-200/85 mb-1">
-          Powered by
-        </div>
-        <img
-          src="/poweredby.png"  // place your PNG in /public/poweredby.png
-          alt="Powered by"
-          className="w-[min(200px,40vw)] drop-shadow-lg"
-        />
-      </div>
+  <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-none">
+  <div className="text-[10px] uppercase tracking-wide text-slate-200/85 mb-0 leading-none">
+    Powered by
+  </div>
+  <img
+    src="/poweredby.png"
+    alt="Powered by"
+    className="mt-0.5 w-[min(180px,36vw)] drop-shadow-md"
+  />
+</div>
     </div>
   );
 }
