@@ -252,72 +252,70 @@ export default function Bubbles() {
       return lines;
     }
 
-    // Draw only the genre titles, centered, up to 3 lines, auto-sized
-    Events.on(render, "afterRender", () => {
-      const ctx = render.context;
-      ctx.save();
-      ctx.textAlign = "center";
-      ctx.shadowColor = "rgba(0,0,0,0.55)";
-      ctx.shadowBlur = 6;
-      const fontFamily = "Inter, system-ui, sans-serif";
+// Draw only the genre titles, always inside the circle
+Events.on(render, "afterRender", () => {
+  const ctx = render.context;
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.shadowColor = "rgba(0,0,0,0.55)";
+  ctx.shadowBlur = 6;
+  const fontFamily = "Inter, system-ui, sans-serif";
 
-      for (const key of Object.keys(bodyMap)) {
-        const b = bodyMap[key];
-        const genre = GENRES.find(g => g.key === key);
-        const r = b.circleRadius || BASE_RADIUS;
+  for (const key of Object.keys(bodyMap)) {
+    const b = bodyMap[key];
+    const genre = GENRES.find(g => g.key === key);
+    const r = b.circleRadius || BASE_RADIUS;
 
-        // We fill ~80% of diameter for text
-        const maxWidth = r * 1.6;
-        const maxLines = 3;
+    // target max area: width ~85% of diameter, height ~70% of diameter
+    const maxWidth = r * 1.7;
+    const maxHeight = r * 1.4;
+    const maxLines = 3;
 
-        // Find a font size that fits within the circle with up to maxLines
-        let chosenLines = [];
-        let chosenFont = 22;
-        for (let font = 24; font >= 9; font -= 1) {
-          ctx.font = `bold ${font}px ${fontFamily}`;
-          const lines = wrapIntoLines(ctx, genre?.label ?? key, maxWidth);
-          if (lines.length <= maxLines) {
-            chosenLines = lines;
-            chosenFont = font;
-            break;
-          }
-        }
-        // fallback: clip to maxLines at smallest font
-        if (chosenLines.length === 0) {
-          ctx.font = `bold 9px ${fontFamily}`;
-          const lines = wrapIntoLines(ctx, genre?.label ?? key, maxWidth);
-          chosenLines = lines.slice(0, maxLines);
-          chosenFont = 9;
-        }
+    let chosenLines = [];
+    let chosenFont = 22;
 
-        // ensure vertical block fits inside circle (use a small margin ratio)
-        const lineHeight = chosenFont + 2;
-        const blockHeight = chosenLines.length * lineHeight;
-        const topY = b.position.y - blockHeight / 2;
-        const bottomY = b.position.y + blockHeight / 2;
-        // If it would spill outside, reduce font a bit greedily
-        if (topY < b.position.y - (r * 0.8) || bottomY > b.position.y + (r * 0.8)) {
-          const scale = 0.9;
-          const f2 = Math.max(9, Math.floor(chosenFont * scale));
-          ctx.font = `bold ${f2}px ${fontFamily}`;
-          // recompute lines
-          const lines2 = wrapIntoLines(ctx, genre?.label ?? key, maxWidth);
-          chosenLines = lines2.slice(0, maxLines);
-          chosenFont = f2;
-        }
+    // try shrinking font until it fits both width & height
+    for (let font = 28; font >= 8; font--) {
+      ctx.font = `bold ${font}px ${fontFamily}`;
 
-        // Draw lines
-        ctx.fillStyle = "#0b1220";
-        let y = b.position.y - (chosenLines.length - 1) * (chosenFont + 2) / 2;
-        for (const line of chosenLines) {
-          ctx.font = `bold ${chosenFont}px ${fontFamily}`;
-          ctx.fillText(line, b.position.x, y);
-          y += chosenFont + 2;
+      // split words into lines
+      const words = (genre?.label ?? key).split(/\s+/);
+      const lines = [];
+      let cur = "";
+      for (const w of words) {
+        const test = cur ? cur + " " + w : w;
+        if (ctx.measureText(test).width <= maxWidth) {
+          cur = test;
+        } else {
+          if (cur) lines.push(cur);
+          cur = w;
         }
       }
+      if (cur) lines.push(cur);
 
-      ctx.restore();
+      const lineHeight = font + 2;
+      const blockHeight = lines.length * lineHeight;
+
+      if (lines.length <= maxLines && blockHeight <= maxHeight) {
+        chosenFont = font;
+        chosenLines = lines;
+        break; // stop at the largest font that fits
+      }
+    }
+
+    // draw lines vertically centered
+    ctx.fillStyle = "#0b1220";
+    const lineHeight = chosenFont + 2;
+    const startY = b.position.y - ((chosenLines.length - 1) * lineHeight) / 2;
+    chosenLines.forEach((line, i) => {
+      ctx.font = `bold ${chosenFont}px ${fontFamily}`;
+      ctx.fillText(line, b.position.x, startY + i * lineHeight);
     });
+  }
+
+  ctx.restore();
+});
+
 
     // cleanup
     return () => {
