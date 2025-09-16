@@ -59,6 +59,11 @@ export default function Bubbles() {
 
   // --- Export CSV + reset votes
   function exportCSV() {
+     const entered = window.prompt("Enter password to export & reset:");
+  if (entered !== "dalyarakevrim") {
+    if (entered !== null) alert("Incorrect password");
+    return;
+  }
     const rows = [
       ["genre_key", "genre_label", "votes"],
       ...GENRES.map(g => [g.key, g.label, String(votesRef.current[g.key] || 0)]),
@@ -282,7 +287,7 @@ export default function Bubbles() {
         const maxHeight = r * 1.15;
         const maxLines  = 3;
         const votes = votesRef.current[key] || 0;
-        const startFont = Math.max(8, Math.floor(r * 0.40 + votes * 0.5));
+        const startFont = Math.max(8, Math.floor(r * 0.30 + votes * 0.5));
         let chosenLines = [];
         let chosenFont = startFont;
 
