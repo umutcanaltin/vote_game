@@ -347,16 +347,16 @@ export default function Bubbles() {
       </div>
 
 
-       <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-none">
-      <img
-        src="/poweredby.png"   // put your PNG into "public/poweredby.png"
-        alt="Powered by ..."
-        className="w-[min(200px,40vw)] drop-shadow-lg"
-      />
-      <div className="text-xs uppercase tracking-wide text-slate-200/85 mt-1">
-        Powered by
-      </div>
-    </div>
+      <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-none">
+  <div className="text-xs uppercase tracking-wide text-slate-200/85 mb-1">
+    Powered by
+  </div>
+  <img
+    src="/poweredby.png"
+    alt="Powered by ..."
+    className="w-[min(200px,40vw)] drop-shadow-lg"
+  />
+</div>
     </div>
 
     
