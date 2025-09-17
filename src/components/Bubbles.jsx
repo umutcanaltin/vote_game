@@ -22,7 +22,7 @@ const GENRES = [
   { key: "pop", label: "Pop", color: "#ff66cc" },
   { key: "groove", label: "Groove", color: "#34d399" },
   { key: "driving_techno", label: "Driving Techno", color: "#00bcd4" },
-  { key: "simos", label: "Simos", color: "#a3e635" },
+  { key: "simosi", label: "Simosi", color: "#a3e635" },
 ];
 
 const LS_KEY = "matter_bubbles_votes_final";
